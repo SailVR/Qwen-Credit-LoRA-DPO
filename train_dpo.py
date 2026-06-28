@@ -15,8 +15,12 @@ warnings.filterwarnings("ignore")
 MODEL_ID = "Qwen/Qwen3-0.6B"
 DATASET_ID = "local_finance_dpo_dataset"
 
-DPO_TRAIN_PATH = "dpo_train.jsonl"
-DPO_EVAL_PATH = "dpo_eval.jsonl"
+script_path = os.path.dirname(os.path.abspath(__file__))
+data_dir = os.path.join(script_path, "data")
+cache_dir = os.path.join(script_path, "model")
+
+DPO_TRAIN_PATH = os.path.join(data_dir, "dpo_train.jsonl")
+DPO_EVAL_PATH = os.path.join(data_dir, "dpo_eval.jsonl")
 SFT_LORA_PATH = "./output_lora/final_model"
 
 MAX_PROMPT_LENGTH = 2048
@@ -35,10 +39,6 @@ RUN_CONFIG = {
     "max_length": MAX_LENGTH,
     "sft_lora_path": SFT_LORA_PATH,
 }
-
-script_path = os.path.dirname(os.path.abspath(__file__))
-cache_dir = os.path.join(script_path, "model")
-
 
 def load_model_and_tokenizer():
     print("---------------------")

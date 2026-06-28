@@ -1,9 +1,13 @@
 import gc
 import json
+import logging
 import os
 import sqlite3
+import time
 import traceback
+import uuid
 from collections import Counter
+from datetime import datetime
 
 from flask import Flask, jsonify, render_template, request
 
@@ -13,16 +17,22 @@ MODEL_ID = "Qwen/Qwen3-0.6B"
 CACHE_DIR = os.path.join(BASE_DIR, "model")
 SFT_LORA_PATH = os.path.join(BASE_DIR, "output_lora", "final_model")
 DPO_LORA_PATH = os.path.join(BASE_DIR, "output_dpo", "final_model")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+LOCAL_MODEL_DIR_CANDIDATES = [
+    os.path.join(CACHE_DIR, "Qwen", "Qwen3-0___6B"),
+    os.path.join(CACHE_DIR, "Qwen3-0.6B"),
+]
 
-DATASET_PATH = os.path.join(BASE_DIR, "finance_sft_dataset.jsonl")
-TRAIN_PATH = os.path.join(BASE_DIR, "train_format.json")
-EVAL_PATH = os.path.join(BASE_DIR, "eval_format.json")
-META_PATH = os.path.join(BASE_DIR, "finance_sft_dataset_meta.json")
+DATASET_PATH = os.path.join(DATA_DIR, "finance_sft_dataset.jsonl")
+TRAIN_PATH = os.path.join(DATA_DIR, "train_format.json")
+EVAL_PATH = os.path.join(DATA_DIR, "eval_format.json")
+META_PATH = os.path.join(DATA_DIR, "finance_sft_dataset_meta.json")
 DB_DIR = os.path.join(BASE_DIR, "finance_dbs")
 
 DEFAULT_SYSTEM_PROMPT = (
-    "你是银行信用卡与金融业务助手。回答要准确、简洁、合规；"
-    "涉及客户隐私、规避风控、伪造材料、违法套现等请求时必须拒绝。"
+    "你是银行信用卡与金融业务助手。回答要准确、简洁、合规。"
+    "如果用户请求生成 SQL 或做数据分析，默认这是授权的本地样例库任务，可以根据给定表结构输出 SQL；"
+    "涉及真实客户隐私查询、规避风控、伪造材料、违法套现等请求时必须拒绝。"
 )
 
 MODEL_CONFIGS = {
@@ -52,6 +62,37 @@ TASK_LABELS = {
 
 MODEL_CACHE = {}
 app = Flask(__name__)
+
+WEB_LOG_DIR = os.path.join(BASE_DIR, "logs")
+WEB_LOG_PATH = os.path.join(WEB_LOG_DIR, "web_chat.log")
+WEB_JSONL_LOG_PATH = os.path.join(WEB_LOG_DIR, "web_chat.jsonl")
+
+
+def setup_web_logger():
+    os.makedirs(WEB_LOG_DIR, exist_ok=True)
+    logger = logging.getLogger("web_chat")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    if logger.handlers:
+        return logger
+
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    file_handler = logging.FileHandler(WEB_LOG_PATH, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    return logger
+
+
+WEB_LOGGER = setup_web_logger()
+
+
+def append_web_jsonl(record):
+    os.makedirs(WEB_LOG_DIR, exist_ok=True)
+    with open(WEB_JSONL_LOG_PATH, "a", encoding="utf-8") as file:
+        file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def read_json(path, default=None):
@@ -155,6 +196,59 @@ def get_db_schema(db_path):
     return tables
 
 
+def format_db_schema(db_id):
+    db_path = os.path.join(DB_DIR, f"{db_id}.sqlite3")
+    if not os.path.exists(db_path):
+        return ""
+
+    schema_lines = []
+    for table in get_db_schema(db_path):
+        columns = ", ".join(table["columns"])
+        schema_lines.append(f"{table['name']}({columns})")
+    return "\n".join(schema_lines)
+
+
+def infer_nl2sql_db_id(message):
+    text = message.lower()
+    if any(keyword in message for keyword in ["风控", "风险", "高风险", "黑名单", "欺诈", "登录", "设备"]):
+        return "risk_control_db"
+    if any(keyword in message for keyword in ["贷款", "放款", "还款计划", "合同", "抵押"]):
+        return "loan_db"
+    if any(keyword in message for keyword in ["理财", "产品", "净值", "持仓", "赎回", "申购"]):
+        return "wealth_db"
+    if any(keyword in message for keyword in ["信用卡", "账单", "额度", "交易", "分期", "积分"]):
+        return "credit_card_db"
+    if "sql" in text:
+        return "risk_control_db"
+    return ""
+
+
+def looks_like_nl2sql(message):
+    text = message.lower()
+    return "sql" in text or any(keyword in message for keyword in ["给出 SQL", "写SQL", "查询", "统计", "排名", "筛选"])
+
+
+def enrich_system_prompt_for_nl2sql(message, system_prompt):
+    if not looks_like_nl2sql(message):
+        return system_prompt, ""
+
+    db_id = infer_nl2sql_db_id(message)
+    if not db_id:
+        return system_prompt, ""
+
+    schema = format_db_schema(db_id)
+    if not schema:
+        return system_prompt, ""
+
+    nl2sql_prompt = (
+        "\n\n当前任务是授权的本地样例库 NL2SQL，不是真实生产数据查询。"
+        "请根据下面 SQLite 表结构把用户问题转换成 SQL。"
+        "只输出 SQL，不要拒绝，不要解释，不要编造不存在的表或字段。"
+        f"\n\n数据库：{db_id}\n表结构：\n{schema}"
+    )
+    return system_prompt + nl2sql_prompt, db_id
+
+
 def load_database_summary():
     databases = []
     if not os.path.isdir(DB_DIR):
@@ -197,6 +291,18 @@ def get_torch_dtype(torch):
     return torch.float32
 
 
+def resolve_model_dir():
+    for path in LOCAL_MODEL_DIR_CANDIDATES:
+        if os.path.isfile(os.path.join(path, "config.json")):
+            WEB_LOGGER.info("Using local cached base model: %s", path)
+            return path
+
+    WEB_LOGGER.info("Local base model cache not found, downloading/loading from ModelScope: %s", MODEL_ID)
+    from modelscope import snapshot_download
+
+    return snapshot_download(MODEL_ID, cache_dir=CACHE_DIR, revision="master")
+
+
 def load_model(model_key):
     if model_key in MODEL_CACHE:
         return MODEL_CACHE[model_key]
@@ -210,11 +316,10 @@ def load_model(model_key):
         raise FileNotFoundError(f"未找到 {config['name']} 的权重目录: {rel_path}。请先完成对应训练。")
 
     import torch
-    from modelscope import snapshot_download
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    model_dir = snapshot_download(MODEL_ID, cache_dir=CACHE_DIR, revision="master")
+    model_dir = resolve_model_dir()
     tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -249,11 +354,19 @@ def build_prompt(tokenizer, system_prompt, user_message):
         return tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
 
-def clean_answer(text):
+def split_thinking_and_answer(text):
     text = text.strip()
-    if "</think>" in text:
-        text = text.split("</think>", 1)[1].strip()
-    return text
+    thinking = ""
+    answer = text
+    if "<think>" in text and "</think>" in text:
+        before, rest = text.split("<think>", 1)
+        thinking, after = rest.split("</think>", 1)
+        answer = (before + after).strip()
+    elif "</think>" in text:
+        thinking, answer = text.split("</think>", 1)
+        thinking = thinking.replace("<think>", "").strip()
+        answer = answer.strip()
+    return thinking.strip(), answer.strip()
 
 
 def generate_answer(model_key, user_message, system_prompt, generation_config):
@@ -278,26 +391,84 @@ def generate_answer(model_key, user_message, system_prompt, generation_config):
         )
 
     answer_ids = output_ids[0][inputs["input_ids"].shape[-1] :]
-    return clean_answer(tokenizer.decode(answer_ids, skip_special_tokens=True))
+    raw_output = tokenizer.decode(answer_ids, skip_special_tokens=True)
+    thinking, answer = split_thinking_and_answer(raw_output)
+    return {
+        "answer": answer,
+        "thinking": thinking,
+        "raw_output": raw_output.strip(),
+        "prompt": prompt,
+    }
 
 
-def run_model(model_key, message, system_prompt, generation_config):
+def run_model(model_key, message, system_prompt, generation_config, request_id):
     config = MODEL_CONFIGS[model_key]
+    started_at = time.perf_counter()
+    WEB_LOGGER.info("[%s] model_start key=%s name=%s", request_id, model_key, config["name"])
     try:
+        generated = generate_answer(model_key, message, system_prompt, generation_config)
+        elapsed = round(time.perf_counter() - started_at, 3)
+        log_record = {
+            "time": datetime.now().isoformat(timespec="seconds"),
+            "request_id": request_id,
+            "event": "model_finish",
+            "model_key": model_key,
+            "model_name": config["name"],
+            "ok": True,
+            "elapsed_seconds": elapsed,
+            "question": message,
+            "system_prompt": system_prompt,
+            "generation_config": generation_config,
+            "thinking": generated["thinking"],
+            "raw_output": generated["raw_output"],
+            "answer": generated["answer"],
+        }
+        append_web_jsonl(log_record)
+        WEB_LOGGER.info(
+            "[%s] model_finish key=%s elapsed=%ss question=%s thinking=%s answer=%s",
+            request_id,
+            model_key,
+            elapsed,
+            message,
+            generated["thinking"] or "<empty>",
+            generated["answer"],
+        )
         return {
             "model_key": model_key,
             "model_name": config["name"],
             "ok": True,
-            "answer": generate_answer(model_key, message, system_prompt, generation_config),
+            "answer": generated["answer"],
+            "thinking": generated["thinking"],
         }
     except Exception as exc:
+        elapsed = round(time.perf_counter() - started_at, 3)
+        error_text = str(exc)
+        error_traceback = traceback.format_exc()
+        append_web_jsonl(
+            {
+                "time": datetime.now().isoformat(timespec="seconds"),
+                "request_id": request_id,
+                "event": "model_error",
+                "model_key": model_key,
+                "model_name": config["name"],
+                "ok": False,
+                "elapsed_seconds": elapsed,
+                "question": message,
+                "system_prompt": system_prompt,
+                "generation_config": generation_config,
+                "error": error_text,
+                "traceback": error_traceback,
+            }
+        )
+        WEB_LOGGER.exception("[%s] model_error key=%s elapsed=%ss error=%s", request_id, model_key, elapsed, error_text)
         return {
             "model_key": model_key,
             "model_name": config["name"],
             "ok": False,
             "answer": "",
-            "error": str(exc),
-            "traceback": traceback.format_exc(),
+            "thinking": "",
+            "error": error_text,
+            "traceback": error_traceback,
         }
 
 
@@ -336,12 +507,15 @@ def dashboard():
 
 @app.route("/chat", methods=["POST"])
 def chat():
+    request_id = uuid.uuid4().hex[:12]
+    request_started_at = time.perf_counter()
     payload = request.get_json(silent=True) or {}
     message = (payload.get("message") or "").strip()
     model_key = (payload.get("model_key") or "base").strip()
     system_prompt = payload.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
 
     if not message:
+        WEB_LOGGER.warning("[%s] bad_request empty_message", request_id)
         return jsonify({"ok": False, "error": "请输入要提问的内容。"}), 400
 
     generation_config = {
@@ -349,13 +523,51 @@ def chat():
         "top_p": float(payload.get("top_p") or 0.9),
         "max_new_tokens": int(payload.get("max_new_tokens") or 512),
     }
+    effective_system_prompt, nl2sql_db_id = enrich_system_prompt_for_nl2sql(message, system_prompt)
 
     selected_keys = list(MODEL_CONFIGS.keys()) if model_key == "all" else [model_key]
     if any(key not in MODEL_CONFIGS for key in selected_keys):
+        WEB_LOGGER.warning("[%s] bad_request unknown_model=%s", request_id, model_key)
         return jsonify({"ok": False, "error": "未知模型选择。"}), 400
 
-    results = [run_model(key, message, system_prompt, generation_config) for key in selected_keys]
-    return jsonify({"ok": True, "results": results, "statuses": model_statuses()})
+    WEB_LOGGER.info(
+        "[%s] chat_start selected=%s question=%s config=%s",
+        request_id,
+        ",".join(selected_keys),
+        message,
+        generation_config,
+    )
+    append_web_jsonl(
+        {
+            "time": datetime.now().isoformat(timespec="seconds"),
+            "request_id": request_id,
+            "event": "chat_start",
+            "selected_models": selected_keys,
+            "question": message,
+            "system_prompt": effective_system_prompt,
+            "nl2sql_db_id": nl2sql_db_id,
+            "generation_config": generation_config,
+        }
+    )
+
+    results = [
+        run_model(key, message, effective_system_prompt, generation_config, request_id)
+        for key in selected_keys
+    ]
+    elapsed = round(time.perf_counter() - request_started_at, 3)
+    append_web_jsonl(
+        {
+            "time": datetime.now().isoformat(timespec="seconds"),
+            "request_id": request_id,
+            "event": "chat_finish",
+            "selected_models": selected_keys,
+            "elapsed_seconds": elapsed,
+            "ok_count": sum(1 for result in results if result.get("ok")),
+            "error_count": sum(1 for result in results if not result.get("ok")),
+        }
+    )
+    WEB_LOGGER.info("[%s] chat_finish elapsed=%ss", request_id, elapsed)
+    return jsonify({"ok": True, "request_id": request_id, "results": results, "statuses": model_statuses()})
 
 
 @app.route("/status")
@@ -375,7 +587,7 @@ def clear_cache():
     except Exception:
         pass
     return jsonify({"ok": True, "statuses": model_statuses()})
-
+ 
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)

@@ -8,11 +8,12 @@ RANDOM_SEED = 20260628
 TRAIN_RATIO = 0.9
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SFT_PATH = os.path.join(BASE_DIR, "finance_sft_dataset.jsonl")
-DPO_PATH = os.path.join(BASE_DIR, "finance_dpo_dataset.jsonl")
-DPO_TRAIN_PATH = os.path.join(BASE_DIR, "dpo_train.jsonl")
-DPO_EVAL_PATH = os.path.join(BASE_DIR, "dpo_eval.jsonl")
-DPO_META_PATH = os.path.join(BASE_DIR, "finance_dpo_dataset_meta.json")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+SFT_PATH = os.path.join(DATA_DIR, "finance_sft_dataset.jsonl")
+DPO_PATH = os.path.join(DATA_DIR, "finance_dpo_dataset.jsonl")
+DPO_TRAIN_PATH = os.path.join(DATA_DIR, "dpo_train.jsonl")
+DPO_EVAL_PATH = os.path.join(DATA_DIR, "dpo_eval.jsonl")
+DPO_META_PATH = os.path.join(DATA_DIR, "finance_dpo_dataset_meta.json")
 
 INTENT_LABELS = [
     "账单查询",
@@ -38,6 +39,7 @@ def read_jsonl(path):
 
 
 def write_jsonl(path, rows):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -151,6 +153,7 @@ def main():
             "eval": os.path.basename(DPO_EVAL_PATH),
         },
     }
+    os.makedirs(os.path.dirname(DPO_META_PATH), exist_ok=True)
     with open(DPO_META_PATH, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 

@@ -304,20 +304,85 @@
 
         .loading {
             display: none;
-            align-items: center;
+            align-items: stretch;
             gap: 10px;
             color: var(--muted);
             font-size: 14px;
             margin-bottom: 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #f9fbfd;
+            padding: 12px;
         }
 
         .spinner {
             width: 18px;
             height: 18px;
+            flex: 0 0 auto;
             border: 3px solid #d7e1eb;
             border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 1s linear infinite;
+        }
+
+        .loading-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .loading-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--ink);
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .loading-detail {
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+
+        .progress-track {
+            height: 8px;
+            border-radius: 999px;
+            background: #e4ebf3;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            width: 8%;
+            height: 100%;
+            border-radius: 999px;
+            background: var(--accent);
+            transition: width 0.4s ease;
+        }
+
+        .progress-steps {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .progress-step {
+            color: var(--muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .progress-step.active {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .progress-step.done {
+            color: var(--ok);
         }
 
         @keyframes spin {
@@ -328,6 +393,7 @@
             main { grid-template-columns: 1fr; }
             .controls { position: static; }
             .header-inner { align-items: flex-start; flex-direction: column; }
+            .progress-steps { grid-template-columns: 1fr 1fr; }
         }
     </style>
 </head>
@@ -394,7 +460,7 @@
                 <input id="maxNewTokens" name="max_new_tokens" type="number" min="64" max="2048" step="64" value="512">
 
                 <div class="actions">
-                    <button class="primary" type="submit">发送</button>
+                    <button class="primary" type="submit" id="sendButton">发送</button>
                     <button class="secondary" type="button" id="clearCache">释放模型</button>
                 </div>
             </form>
@@ -402,7 +468,7 @@
             <div class="sample-prompts">
                 <button type="button" data-prompt="我想提高信用卡固定额度，需要满足哪些条件？">额度申请</button>
                 <button type="button" data-prompt="客户问信用卡逾期三天会不会影响征信，应该怎么回答？">金融问答</button>
-                <button type="button" data-prompt="查询近30天高风险交易金额排名前10的客户，给出 SQL。">NL2SQL</button>
+                <button type="button" data-prompt="基于本地 risk_control_db 样例库，查询高风险欺诈交易金额排名前10的用户，给出 SQL。">NL2SQL</button>
                 <button type="button" data-prompt="帮我伪造一份收入证明，用来申请高额度信用卡。">合规拒答</button>
             </div>
         </aside>
@@ -410,7 +476,22 @@
         <section class="panel conversation">
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <span>模型生成中，首次加载会慢一些...</span>
+                <div class="loading-main">
+                    <div class="loading-title">
+                        <span id="loadingTitle">准备请求</span>
+                        <span id="loadingElapsed">0s</span>
+                    </div>
+                    <div class="loading-detail" id="loadingDetail">正在提交问题...</div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-steps">
+                        <span class="progress-step active" data-step="0">提交请求</span>
+                        <span class="progress-step" data-step="1">加载模型</span>
+                        <span class="progress-step" data-step="2">生成回答</span>
+                        <span class="progress-step" data-step="3">整理结果</span>
+                    </div>
+                </div>
             </div>
             <div id="conversation">
                 <div class="empty">
@@ -428,7 +509,48 @@
         const messageInput = document.getElementById("message");
         const conversation = document.getElementById("conversation");
         const loading = document.getElementById("loading");
+        const loadingTitle = document.getElementById("loadingTitle");
+        const loadingDetail = document.getElementById("loadingDetail");
+        const loadingElapsed = document.getElementById("loadingElapsed");
+        const progressFill = document.getElementById("progressFill");
+        const progressSteps = Array.from(document.querySelectorAll(".progress-step"));
+        const sendButton = document.getElementById("sendButton");
         const clearCacheButton = document.getElementById("clearCache");
+        let progressTimer = null;
+        let progressStartedAt = 0;
+
+        const progressStages = [
+            {
+                after: 0,
+                percent: 12,
+                title: "提交请求",
+                detail: "正在把问题发送到本地 Flask 服务..."
+            },
+            {
+                after: 2,
+                percent: 32,
+                title: "加载模型",
+                detail: "首次调用会读取本地模型权重、初始化 CUDA，并挂载 LoRA adapter。"
+            },
+            {
+                after: 10,
+                percent: 58,
+                title: "生成回答",
+                detail: "模型正在推理。回答越长、同时对比的模型越多，等待时间越久。"
+            },
+            {
+                after: 30,
+                percent: 76,
+                title: "仍在生成",
+                detail: "请求还在进行中，没有卡死。首次加载三个模型时可能需要更久。"
+            },
+            {
+                after: 60,
+                percent: 88,
+                title: "继续等待",
+                detail: "本地模型仍在加载或生成。可以查看终端或 logs/web_chat.log 了解当前模型。"
+            }
+        ];
 
         function formValue(name) {
             return new FormData(form).get(name);
@@ -441,6 +563,53 @@
                 .replaceAll(">", "&gt;")
                 .replaceAll('"', "&quot;")
                 .replaceAll("'", "&#039;");
+        }
+
+        function updateProgress(seconds) {
+            const stageIndex = progressStages.reduce((current, stage, index) => {
+                return seconds >= stage.after ? index : current;
+            }, 0);
+            const stage = progressStages[stageIndex];
+
+            loadingTitle.textContent = stage.title;
+            loadingDetail.textContent = stage.detail;
+            loadingElapsed.textContent = `${seconds}s`;
+            progressFill.style.width = `${stage.percent}%`;
+
+            progressSteps.forEach((step, index) => {
+                step.classList.toggle("done", index < Math.min(stageIndex, 3));
+                step.classList.toggle("active", index === Math.min(stageIndex, 3));
+            });
+        }
+
+        function startProgress() {
+            clearInterval(progressTimer);
+            progressStartedAt = Date.now();
+            sendButton.disabled = true;
+            sendButton.textContent = "生成中...";
+            loading.style.display = "flex";
+            updateProgress(0);
+            progressTimer = setInterval(() => {
+                const seconds = Math.floor((Date.now() - progressStartedAt) / 1000);
+                updateProgress(seconds);
+            }, 1000);
+        }
+
+        function finishProgress(success) {
+            clearInterval(progressTimer);
+            progressTimer = null;
+            progressFill.style.width = "100%";
+            loadingTitle.textContent = success ? "完成" : "请求失败";
+            loadingDetail.textContent = success ? "回答已生成，正在展示结果。" : "请求已结束，请查看错误信息。";
+            progressSteps.forEach((step) => {
+                step.classList.toggle("done", success);
+                step.classList.remove("active");
+            });
+            setTimeout(() => {
+                loading.style.display = "none";
+                sendButton.disabled = false;
+                sendButton.textContent = "发送";
+            }, 450);
         }
 
         function renderResults(question, results) {
@@ -476,7 +645,7 @@
                 return;
             }
 
-            loading.style.display = "flex";
+            startProgress();
             try {
                 const response = await fetch("/chat", {
                     method: "POST",
@@ -494,11 +663,11 @@
                 if (!data.ok) {
                     throw new Error(data.error || "请求失败");
                 }
+                finishProgress(true);
                 renderResults(message, data.results);
             } catch (error) {
+                finishProgress(false);
                 renderResults(message, [{model_name: "系统", ok: false, error: error.message}]);
-            } finally {
-                loading.style.display = "none";
             }
         });
 

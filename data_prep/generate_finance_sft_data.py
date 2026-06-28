@@ -25,14 +25,16 @@ NL2SQL_DB_COUNTS = {
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = os.path.join(BASE_DIR, "finance_dbs")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
-ALL_DATASET_PATH = os.path.join(BASE_DIR, "finance_sft_dataset.jsonl")
-TRAIN_PATH = os.path.join(BASE_DIR, "train_format.json")
-EVAL_PATH = os.path.join(BASE_DIR, "eval_format.json")
-META_PATH = os.path.join(BASE_DIR, "finance_sft_dataset_meta.json")
+ALL_DATASET_PATH = os.path.join(DATA_DIR, "finance_sft_dataset.jsonl")
+TRAIN_PATH = os.path.join(DATA_DIR, "train_format.json")
+EVAL_PATH = os.path.join(DATA_DIR, "eval_format.json")
+META_PATH = os.path.join(DATA_DIR, "finance_sft_dataset_meta.json")
 
 
 def write_jsonl(path, rows):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -399,6 +401,7 @@ def main():
             "eval": os.path.basename(EVAL_PATH),
         },
     }
+    os.makedirs(os.path.dirname(META_PATH), exist_ok=True)
     with open(META_PATH, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 

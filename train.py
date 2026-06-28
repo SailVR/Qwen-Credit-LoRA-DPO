@@ -1,12 +1,14 @@
 import os
+import warnings
 
 import pandas as pd
 from datasets import Dataset, load_from_disk
 from modelscope import snapshot_download
-from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, DataCollatorForSeq2Seq, Trainer, TrainingArguments
 
 from local_logging import LocalMetricCallback, plot_loss_curve, save_predictions, setup_local_run
+
+warnings.filterwarnings("ignore")
 
 MAX_LENGTH = 4096
 MODEL_ID = "Qwen/Qwen3-0.6B"
@@ -30,22 +32,14 @@ RUN_CONFIG = {
     "batch_size": 1,
     "epochs": 1,
     "gradient_accumulation_steps": 4,
-    "training_type": "lora",
-    "lora_r": 8,
-    "lora_alpha": 32,
-    "lora_dropout": 0.1,
+    "training_type": "full",
 }
 
 def load_model_and_tokenizer():
     print("---------------------")
     print("Downloading/loading base model...")
     model_dir = snapshot_download(MODEL_ID, cache_dir=cache_dir, revision="master")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_dir,
-        device_map="auto",
-        torch_dtype="auto",
-        trust_remote_code=True,
-    )
+    model = AutoModelForCausalLM.from_pretrained(model_dir, device_map="auto", torch_dtype="auto")
     tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -80,15 +74,7 @@ def build_process_fn(tokenizer):
 def predict(message, model, tokenizer):
     text = tokenizer.apply_chat_template(message, add_generation_prompt=True, tokenize=False)
     input_ids = tokenizer(text, return_tensors="pt").to(model.device)
-    generation_ids = model.generate(
-        **input_ids,
-        max_length=2048,
-        do_sample=True,
-        temperature=0.6,
-        top_p=0.95,
-        top_k=20,
-        min_p=0,
-    )
+    generation_ids = model.generate(**input_ids, max_length=2048, do_sample=True)
     generation_ids = generation_ids[0]
     return tokenizer.decode(generation_ids[len(input_ids["input_ids"][0]) :], skip_special_tokens=True)
 
@@ -109,27 +95,18 @@ def get_processed_dataset(dataset_path, process_path, process_fun):
 
 
 def main():
-    log_dir = setup_local_run("lora_finetune", RUN_CONFIG)
+    log_dir = setup_local_run("full_finetune", RUN_CONFIG)
     model, tokenizer = load_model_and_tokenizer()
     process_fun = build_process_fn(tokenizer)
 
     train_dataset = get_processed_dataset(train_dataset_path, train_process_path, process_fun)
     eval_dataset = get_processed_dataset(eval_dataset_path, eval_process_path, process_fun)
 
-    config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        r=8,
-        lora_alpha=32,
-        lora_dropout=0.1,
-    )
-    model = get_peft_model(model, config)
     model.enable_input_require_grads()
-
     collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, label_pad_token_id=-100)
 
     args = TrainingArguments(
-        output_dir="./output_lora/Qwen3-0.6B",
+        output_dir="./output/Qwen3-0.6B",
         per_device_train_batch_size=1,
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=4,
@@ -137,7 +114,7 @@ def main():
         eval_steps=100,
         logging_steps=10,
         num_train_epochs=1,
-        save_steps=100,
+        save_steps=400,
         learning_rate=5e-5,
         save_on_each_node=True,
         gradient_checkpointing=True,
@@ -170,8 +147,8 @@ def main():
         print(text)
 
     save_predictions(log_dir, predictions)
-    trainer.save_model("./output_lora/final_model")
-    print("Model saved to: ./output_lora/final_model")
+    trainer.save_model("./output/final_model")
+    print("Model saved to: ./output/final_model")
 
 
 if __name__ == "__main__":
