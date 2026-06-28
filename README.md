@@ -21,10 +21,21 @@
 ```bash
 conda create -n dpo python=3.10
 conda activate dpo
+```
+
+PyTorch 需要单独安装，版本必须与本机 CUDA 驱动匹配。下面是 CUDA 12.4 的示例命令：
+
+```bash
+pip3 install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://download.pytorch.org/whl/cu124
+```
+
+然后安装项目依赖：
+
+```bash
 pip install -r requirements.txt
 ```
 
-说明：训练和推理需要 PyTorch。不同机器的 CUDA 版本不同，建议按本机环境安装合适的 `torch` 版本。
+如果你的 CUDA 版本不是 12.4，请到 PyTorch 官网选择对应的安装命令。
 
 ## 目录结构
 
