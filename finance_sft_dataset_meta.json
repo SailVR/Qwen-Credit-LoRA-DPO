@@ -1,0 +1,24 @@
+{
+  "total": 6000,
+  "train": 5400,
+  "eval": 600,
+  "task_counts": {
+    "qa": 2200,
+    "nl2sql": 1800,
+    "intent_classification": 1200,
+    "compliance": 800
+  },
+  "nl2sql_db_counts": {
+    "credit_card_db": 650,
+    "loan_db": 400,
+    "risk_control_db": 400,
+    "wealth_db": 350
+  },
+  "validated_sql_count": 1800,
+  "random_seed": 20260628,
+  "files": {
+    "all": "finance_sft_dataset.jsonl",
+    "train": "train_format.json",
+    "eval": "eval_format.json"
+  }
+}

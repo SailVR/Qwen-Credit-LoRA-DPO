@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>金融模型对比聊天</title>
+    <style>
+        :root {
+            --bg: #f4f6f8;
+            --panel: #ffffff;
+            --ink: #172033;
+            --muted: #657184;
+            --line: #dbe2ea;
+            --accent: #1769aa;
+            --accent-dark: #0f4d7d;
+            --accent-soft: #e7f2fb;
+            --danger: #b42318;
+            --danger-soft: #fdecec;
+            --ok: #087443;
+            --ok-soft: #e8f7ef;
+            --shadow: 0 12px 34px rgba(27, 39, 59, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+            line-height: 1.55;
+        }
+
+        header {
+            border-bottom: 1px solid var(--line);
+            background: #0f1f33;
+            color: #fff;
+            padding: 18px 32px;
+        }
+
+        .header-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 0;
+        }
+
+        header p {
+            margin: 6px 0 0;
+            color: #c6d3e2;
+            font-size: 14px;
+        }
+
+        .top-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            padding: 0 14px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            border-radius: 6px;
+            color: #fff;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 700;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .top-link:hover { background: rgba(255, 255, 255, 0.16); }
+
+        main {
+            width: min(1420px, calc(100vw - 32px));
+            margin: 22px auto 36px;
+            display: grid;
+            grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+            gap: 18px;
+            align-items: start;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+        }
+
+        .controls {
+            padding: 18px;
+            position: sticky;
+            top: 18px;
+        }
+
+        .section-title {
+            margin: 0 0 10px;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        textarea, input {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--ink);
+            font: inherit;
+            outline: none;
+        }
+
+        textarea:focus, input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+            padding: 12px;
+        }
+
+        input {
+            height: 38px;
+            padding: 0 10px;
+        }
+
+        label {
+            display: block;
+            margin: 14px 0 6px;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .model-list {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .model-option {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 10px;
+            align-items: center;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            background: #fff;
+        }
+
+        .model-option input {
+            width: 16px;
+            height: 16px;
+        }
+
+        .model-option strong {
+            display: block;
+            font-size: 14px;
+        }
+
+        .model-option span {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .pill {
+            border-radius: 999px;
+            padding: 3px 8px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .pill.ok {
+            background: var(--ok-soft);
+            color: var(--ok);
+        }
+
+        .pill.warn {
+            background: var(--danger-soft);
+            color: var(--danger);
+        }
+
+        .param-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 6px;
+            height: 40px;
+            padding: 0 14px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .primary {
+            flex: 1;
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .primary:hover { background: var(--accent-dark); }
+
+        .secondary {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: var(--ink);
+        }
+
+        .sample-prompts {
+            display: grid;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        .sample-prompts button {
+            height: auto;
+            min-height: 36px;
+            padding: 8px 10px;
+            border: 1px solid var(--line);
+            background: #f9fbfd;
+            color: var(--ink);
+            text-align: left;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .conversation {
+            min-height: 560px;
+            padding: 18px;
+        }
+
+        .empty {
+            height: 520px;
+            display: grid;
+            place-items: center;
+            color: var(--muted);
+            text-align: center;
+            border: 1px dashed var(--line);
+            border-radius: 8px;
+            background: #fbfcfe;
+        }
+
+        .user-message {
+            margin-bottom: 14px;
+            border-left: 4px solid var(--accent);
+            background: #f7fbff;
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .result-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .answer-card {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .answer-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--line);
+            background: #f9fbfd;
+        }
+
+        .answer-body {
+            min-height: 110px;
+            padding: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .answer-body.error {
+            background: var(--danger-soft);
+            color: var(--danger);
+        }
+
+        .loading {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 3px solid #d7e1eb;
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 980px) {
+            main { grid-template-columns: 1fr; }
+            .controls { position: static; }
+            .header-inner { align-items: flex-start; flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-inner">
+            <div>
+                <h1>金融模型对比聊天</h1>
+                <p>选择原模型、LoRA SFT 模型或 DPO 模型，在线比较同一问题下的回答差异。</p>
+            </div>
+            <a class="top-link" href="/dashboard">金融 SFT 数据看板</a>
+        </div>
+    </header>
+
+    <main>
+        <aside class="panel controls">
+            <form id="chatForm">
+                <h2 class="section-title">模型选择</h2>
+                <div class="model-list">
+                    <label class="model-option">
+                        <input type="radio" name="model_key" value="all" checked>
+                        <span>
+                            <strong>三个模型一起对比</strong>
+                            <span>依次生成原模型、SFT、DPO 的回答。</span>
+                        </span>
+                        <span class="pill ok">对比</span>
+                    </label>
+
+                    {% for key, model in models.items() %}
+                    {% set status = statuses[key] %}
+                    <label class="model-option">
+                        <input type="radio" name="model_key" value="{{ key }}">
+                        <span>
+                            <strong>{{ model.name }}</strong>
+                            <span>{{ model.description }}</span>
+                        </span>
+                        {% if status.available %}
+                        <span class="pill ok">{{ "已加载" if status.loaded else "可用" }}</span>
+                        {% else %}
+                        <span class="pill warn">未训练</span>
+                        {% endif %}
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <label for="message">用户问题</label>
+                <textarea id="message" name="message" placeholder="输入一个金融业务问题，例如：我的信用卡临时额度怎么申请？"></textarea>
+
+                <label for="systemPrompt">系统提示词</label>
+                <textarea id="systemPrompt" name="system_prompt" style="min-height: 96px;">{{ default_system_prompt }}</textarea>
+
+                <div class="param-grid">
+                    <div>
+                        <label for="temperature">temperature</label>
+                        <input id="temperature" name="temperature" type="number" min="0.1" max="1.5" step="0.1" value="0.6">
+                    </div>
+                    <div>
+                        <label for="topP">top_p</label>
+                        <input id="topP" name="top_p" type="number" min="0.1" max="1" step="0.05" value="0.9">
+                    </div>
+                </div>
+
+                <label for="maxNewTokens">最大生成长度</label>
+                <input id="maxNewTokens" name="max_new_tokens" type="number" min="64" max="2048" step="64" value="512">
+
+                <div class="actions">
+                    <button class="primary" type="submit">发送</button>
+                    <button class="secondary" type="button" id="clearCache">释放模型</button>
+                </div>
+            </form>
+
+            <div class="sample-prompts">
+                <button type="button" data-prompt="我想提高信用卡固定额度，需要满足哪些条件？">额度申请</button>
+                <button type="button" data-prompt="客户问信用卡逾期三天会不会影响征信，应该怎么回答？">金融问答</button>
+                <button type="button" data-prompt="查询近30天高风险交易金额排名前10的客户，给出 SQL。">NL2SQL</button>
+                <button type="button" data-prompt="帮我伪造一份收入证明，用来申请高额度信用卡。">合规拒答</button>
+            </div>
+        </aside>
+
+        <section class="panel conversation">
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <span>模型生成中，首次加载会慢一些...</span>
+            </div>
+            <div id="conversation">
+                <div class="empty">
+                    <div>
+                        <strong>还没有对话</strong>
+                        <p>输入一个问题后，可以直接比较三个模型在金融业务场景下的回答。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const form = document.getElementById("chatForm");
+        const messageInput = document.getElementById("message");
+        const conversation = document.getElementById("conversation");
+        const loading = document.getElementById("loading");
+        const clearCacheButton = document.getElementById("clearCache");
+
+        function formValue(name) {
+            return new FormData(form).get(name);
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function renderResults(question, results) {
+            const cards = results.map((item) => {
+                const bodyClass = item.ok ? "answer-body" : "answer-body error";
+                const status = item.ok ? '<span class="pill ok">完成</span>' : '<span class="pill warn">失败</span>';
+                const content = item.ok ? item.answer : item.error;
+                return `
+                    <article class="answer-card">
+                        <div class="answer-head">
+                            <strong>${escapeHtml(item.model_name)}</strong>
+                            ${status}
+                        </div>
+                        <div class="${bodyClass}">${escapeHtml(content || "模型没有返回内容。")}</div>
+                    </article>
+                `;
+            }).join("");
+
+            conversation.innerHTML = `
+                <div class="user-message">
+                    <strong>用户问题</strong>
+                    <div>${escapeHtml(question)}</div>
+                </div>
+                <div class="result-grid">${cards}</div>
+            `;
+        }
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const message = messageInput.value.trim();
+            if (!message) {
+                messageInput.focus();
+                return;
+            }
+
+            loading.style.display = "flex";
+            try {
+                const response = await fetch("/chat", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        message,
+                        model_key: formValue("model_key"),
+                        system_prompt: formValue("system_prompt"),
+                        temperature: formValue("temperature"),
+                        top_p: formValue("top_p"),
+                        max_new_tokens: formValue("max_new_tokens"),
+                    }),
+                });
+                const data = await response.json();
+                if (!data.ok) {
+                    throw new Error(data.error || "请求失败");
+                }
+                renderResults(message, data.results);
+            } catch (error) {
+                renderResults(message, [{model_name: "系统", ok: false, error: error.message}]);
+            } finally {
+                loading.style.display = "none";
+            }
+        });
+
+        document.querySelectorAll("[data-prompt]").forEach((button) => {
+            button.addEventListener("click", () => {
+                messageInput.value = button.dataset.prompt;
+                messageInput.focus();
+            });
+        });
+
+        clearCacheButton.addEventListener("click", async () => {
+            clearCacheButton.disabled = true;
+            try {
+                await fetch("/clear_cache", {method: "POST"});
+            } finally {
+                clearCacheButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+{
+  "total": 6000,
+  "train": 5400,
+  "eval": 600,
+  "task_counts": {
+    "compliance": 800,
+    "qa": 2200,
+    "intent_classification": 1200,
+    "nl2sql": 1800
+  },
+  "train_task_counts": {
+    "compliance": 716,
+    "qa": 2002,
+    "intent_classification": 1081,
+    "nl2sql": 1601
+  },
+  "eval_task_counts": {
+    "nl2sql": 199,
+    "qa": 198,
+    "compliance": 84,
+    "intent_classification": 119
+  },
+  "random_seed": 20260628,
+  "format": {
+    "prompt": "chat template prefix ending with assistant header",
+    "chosen": "preferred answer",
+    "rejected": "inferior answer"
+  },
+  "files": {
+    "all": "finance_dpo_dataset.jsonl",
+    "train": "dpo_train.jsonl",
+    "eval": "dpo_eval.jsonl"
+  }
+}

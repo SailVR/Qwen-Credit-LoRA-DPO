@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>金融 SFT 数据看板</title>
+    <style>
+        :root {
+            --bg: #f5f7fb;
+            --panel: #ffffff;
+            --ink: #172033;
+            --muted: #687386;
+            --line: #dfe5ef;
+            --accent: #1769aa;
+            --accent-soft: #e7f2fb;
+            --ok: #087443;
+            --ok-soft: #e8f7ef;
+            --shadow: 0 12px 34px rgba(27, 39, 59, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+            line-height: 1.55;
+        }
+
+        header {
+            background: #0f1f33;
+            color: #fff;
+            padding: 18px 32px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header p {
+            margin: 6px 0 0;
+            color: #c6d3e2;
+            font-size: 14px;
+        }
+
+        .top-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            padding: 0 14px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            border-radius: 6px;
+            color: #fff;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 700;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        main {
+            max-width: 1360px;
+            margin: 0 auto;
+            padding: 24px 28px 40px;
+        }
+
+        .grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        .two-col { grid-template-columns: 1.05fr 0.95fr; align-items: start; }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            padding: 18px;
+        }
+
+        .stat { min-height: 92px; }
+        .stat .label { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+        .stat .value { font-size: 28px; font-weight: 700; }
+        .stat .note { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+        h2 {
+            margin: 0 0 14px;
+            font-size: 18px;
+        }
+
+        .task-bars {
+            display: grid;
+            gap: 10px;
+        }
+
+        .bar-row {
+            display: grid;
+            grid-template-columns: 120px 1fr 72px;
+            gap: 10px;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .bar-track {
+            height: 10px;
+            background: #edf1f7;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 999px;
+        }
+
+        .filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .filters a {
+            text-decoration: none;
+            border: 1px solid var(--line);
+            color: var(--ink);
+            background: #fff;
+            padding: 7px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .filters a.active {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .sample-list, .db-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .sample {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14px;
+            background: #fff;
+        }
+
+        .sample-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .db-badge {
+            background: var(--ok-soft);
+            color: var(--ok);
+        }
+
+        .sample p { margin: 8px 0; }
+
+        .sample pre {
+            margin: 8px 0 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #f7f9fc;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 10px;
+            max-height: 180px;
+            overflow: auto;
+        }
+
+        .db-title {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .db-title span {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            border-top: 1px solid var(--line);
+            padding: 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            color: var(--muted);
+            font-weight: 700;
+            background: #f9fbfe;
+        }
+
+        .files {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .file {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 12px;
+            background: #fff;
+        }
+
+        .file strong {
+            display: block;
+            font-size: 13px;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+
+        .file span {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        @media (max-width: 980px) {
+            .stats, .two-col, .files { grid-template-columns: 1fr; }
+            .header-inner { align-items: flex-start; flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-inner">
+            <div>
+                <h1>金融 SFT 数据看板</h1>
+                <p>查看训练数据分布、样本预览，以及 NL2SQL 对应的 SQLite 业务库结构。</p>
+            </div>
+            <a class="top-link" href="/">返回聊天对比</a>
+        </div>
+    </header>
+
+    <main>
+        <section class="grid stats">
+            <div class="panel stat">
+                <div class="label">完整数据集</div>
+                <div class="value">{{ summary.total }}</div>
+                <div class="note">finance_sft_dataset.jsonl</div>
+            </div>
+            <div class="panel stat">
+                <div class="label">训练集</div>
+                <div class="value">{{ summary.train }}</div>
+                <div class="note">train_format.json</div>
+            </div>
+            <div class="panel stat">
+                <div class="label">验证集</div>
+                <div class="value">{{ summary.eval }}</div>
+                <div class="note">eval_format.json</div>
+            </div>
+            <div class="panel stat">
+                <div class="label">NL2SQL 校验</div>
+                <div class="value">{{ summary.validated_sql_count }}</div>
+                <div class="note">SQLite 可执行 SQL</div>
+            </div>
+            <div class="panel stat">
+                <div class="label">SQLite 数据库</div>
+                <div class="value">{{ databases|length }}</div>
+                <div class="note">finance_dbs</div>
+            </div>
+            <div class="panel stat">
+                <div class="label">随机种子</div>
+                <div class="value">{{ summary.random_seed }}</div>
+                <div class="note">可复现生成</div>
+            </div>
+        </section>
+
+        <section class="grid two-col" style="margin-top: 16px;">
+            <div class="panel">
+                <h2>任务分布</h2>
+                <div class="task-bars">
+                    {% for key, label in task_labels.items() %}
+                    {% set count = summary.task_counts.get(key, 0) %}
+                    {% set pct = (count / summary.total * 100) if summary.total else 0 %}
+                    <div class="bar-row">
+                        <span>{{ label }}</span>
+                        <div class="bar-track"><div class="bar-fill" style="width: {{ pct }}%;"></div></div>
+                        <strong>{{ count }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>文件状态</h2>
+                <div class="files">
+                    {% for name, info in files.items() %}
+                    <div class="file">
+                        <strong>{{ name }}</strong>
+                        {% if info.exists %}
+                        <span>{{ info.size_mb }} MB</span>
+                        {% else %}
+                        <span>未生成</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+
+        <section class="grid two-col" style="margin-top: 16px;">
+            <div class="panel">
+                <h2>样本预览</h2>
+                <div class="filters">
+                    <a href="/dashboard" class="{{ 'active' if not active_task else '' }}">全部</a>
+                    {% for key, label in task_labels.items() %}
+                    <a href="/dashboard?task_type={{ key }}" class="{{ 'active' if active_task == key else '' }}">{{ label }}</a>
+                    {% endfor %}
+                </div>
+
+                <div class="sample-list">
+                    {% for sample in samples %}
+                    <article class="sample">
+                        <div class="sample-head">
+                            <div>
+                                <span class="badge">{{ sample.task_label }}</span>
+                                {% if sample.db_id %}
+                                <span class="badge db-badge">{{ sample.db_id }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <p><strong>输入：</strong>{{ sample.input }}</p>
+                        <pre>{{ sample.output }}</pre>
+                    </article>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>SQLite 业务库</h2>
+                <div class="db-list">
+                    {% for db in databases %}
+                    <section class="sample">
+                        <div class="db-title">
+                            <strong>{{ db.db_id }}</strong>
+                            <span>{{ db.size_kb }} KB</span>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>表</th>
+                                    <th>行数</th>
+                                    <th>字段</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for table in db.tables %}
+                                <tr>
+                                    <td>{{ table.name }}</td>
+                                    <td>{{ table.count }}</td>
+                                    <td>{{ table.columns|join(', ') }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </section>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>
