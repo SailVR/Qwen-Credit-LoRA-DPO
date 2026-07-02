@@ -62,6 +62,66 @@ def save_predictions(log_dir, predictions):
     print(f"Predictions saved to: {os.path.abspath(path)}")
 
 
+def save_preference_samples(log_dir, samples):
+    path = os.path.join(log_dir, "preference_samples.jsonl")
+    with open(path, "w", encoding="utf-8") as f:
+        for sample in samples:
+            f.write(json.dumps(sample, ensure_ascii=False) + "\n")
+    print(f"Preference samples saved to: {os.path.abspath(path)}")
+
+
+def summarize_log_history(log_history):
+    train_losses = [
+        {"step": item.get("step"), "loss": item["loss"]}
+        for item in log_history
+        if "loss" in item
+    ]
+    eval_losses = [
+        {"step": item.get("step"), "eval_loss": item["eval_loss"]}
+        for item in log_history
+        if "eval_loss" in item
+    ]
+    summary = {
+        "train_loss_count": len(train_losses),
+        "eval_loss_count": len(eval_losses),
+        "latest_train_loss": train_losses[-1] if train_losses else None,
+        "latest_eval_loss": eval_losses[-1] if eval_losses else None,
+        "best_train_loss": min(train_losses, key=lambda item: item["loss"]) if train_losses else None,
+        "best_eval_loss": min(eval_losses, key=lambda item: item["eval_loss"]) if eval_losses else None,
+    }
+    return summary
+
+
+def save_run_summary(
+    log_dir,
+    run_name,
+    trainer,
+    final_model_path,
+    train_rows=None,
+    eval_rows=None,
+    train_metrics=None,
+    eval_metrics=None,
+    extra=None,
+):
+    summary = {
+        "run_name": run_name,
+        "completed_at": datetime.now().isoformat(timespec="seconds"),
+        "log_dir": os.path.abspath(log_dir),
+        "final_model_path": os.path.abspath(final_model_path),
+        "train_rows": train_rows,
+        "eval_rows": eval_rows,
+        "global_step": getattr(trainer.state, "global_step", None),
+        "metrics_summary": summarize_log_history(trainer.state.log_history),
+        "train_metrics": train_metrics or {},
+        "eval_metrics": eval_metrics or {},
+        "extra": extra or {},
+    }
+    path = os.path.join(log_dir, "summary.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+    print(f"Run summary saved to: {os.path.abspath(path)}")
+
+
 def plot_loss_curve(log_dir, log_history):
     train_steps = []
     train_losses = []

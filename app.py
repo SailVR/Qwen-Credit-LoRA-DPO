@@ -7,6 +7,7 @@ import time
 import traceback
 import uuid
 from collections import Counter
+from collections import OrderedDict
 from datetime import datetime
 
 from flask import Flask, jsonify, render_template, request
@@ -60,7 +61,8 @@ TASK_LABELS = {
     "compliance": "合规拒答",
 }
 
-MODEL_CACHE = {}
+MAX_LOADED_MODELS = int(os.environ.get("MAX_LOADED_MODELS", "1"))
+MODEL_CACHE = OrderedDict()
 app = Flask(__name__)
 
 WEB_LOG_DIR = os.path.join(BASE_DIR, "logs")
@@ -285,6 +287,37 @@ def model_statuses():
     return statuses
 
 
+def clear_cuda_cache():
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def evict_model(model_key, reason):
+    bundle = MODEL_CACHE.pop(model_key, None)
+    if bundle is None:
+        return
+    bundle.clear()
+    clear_cuda_cache()
+    WEB_LOGGER.info("model_cache_evict key=%s reason=%s", model_key, reason)
+
+
+def trim_model_cache(active_key=None):
+    max_loaded = max(1, MAX_LOADED_MODELS)
+    while len(MODEL_CACHE) > max_loaded:
+        for key in list(MODEL_CACHE.keys()):
+            if key != active_key:
+                evict_model(key, "max_loaded_models")
+                break
+        else:
+            break
+
+
 def get_torch_dtype(torch):
     if torch.cuda.is_available():
         return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
@@ -305,6 +338,7 @@ def resolve_model_dir():
 
 def load_model(model_key):
     if model_key in MODEL_CACHE:
+        MODEL_CACHE.move_to_end(model_key)
         return MODEL_CACHE[model_key]
     if model_key not in MODEL_CONFIGS:
         raise ValueError(f"未知模型类型: {model_key}")
@@ -335,6 +369,8 @@ def load_model(model_key):
     model.eval()
 
     MODEL_CACHE[model_key] = {"model": model, "tokenizer": tokenizer}
+    MODEL_CACHE.move_to_end(model_key)
+    trim_model_cache(active_key=model_key)
     return MODEL_CACHE[model_key]
 
 
@@ -577,15 +613,11 @@ def status():
 
 @app.route("/clear_cache", methods=["POST"])
 def clear_cache():
+    keys = list(MODEL_CACHE.keys())
+    for key in keys:
+        evict_model(key, "manual_clear")
     MODEL_CACHE.clear()
-    gc.collect()
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except Exception:
-        pass
+    clear_cuda_cache()
     return jsonify({"ok": True, "statuses": model_statuses()})
  
 

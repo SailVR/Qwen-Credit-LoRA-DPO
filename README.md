@@ -11,8 +11,12 @@
 - 初始化 4 个金融业务 SQLite 样例库
 - 支持 LoRA SFT 训练
 - 支持基于 SFT LoRA 的 DPO 训练
+- 支持训练参数命令行配置，便于对比不同学习率、epoch、LoRA rank 和 DPO beta
+- 支持 SFT / DPO 数据质量检查和项目 smoke test
 - 训练过程本地输出日志、metrics 和 loss 曲线
+- 训练结束后沉淀 summary、最终评估指标、最终模型路径和样例输出
 - Web 页面支持三模型聊天对比
+- Web 推理默认只缓存最近使用的模型，切换模型时自动释放旧模型显存
 - Web 页面支持金融 SFT 数据看板
 - Web 调用会记录请求、模型、问题、思考内容、原始输出和耗时
 
@@ -43,6 +47,7 @@ pip install -r requirements.txt
 
 ```text
 data/                           # SFT / DPO 数据文件
+checks/                         # 数据质量检查和项目 smoke test
 data_prep/                      # 数据库初始化与数据生成模块
 finance_dbs/                    # SQLite 样例数据库
 templates/                      # Web 页面模板
@@ -120,12 +125,43 @@ python prepare_data.py --skip-dpo
 python prepare_data.py --clean-cache
 ```
 
+## 数据检查
+
+项目提供轻量级数据质量检查脚本：
+
+```bash
+python checks/check_sft_data.py
+python checks/check_dpo_data.py
+```
+
+`check_sft_data.py` 会检查 JSONL 格式、必填字段、任务类型分布、重复样本、NL2SQL SQL 可执行性，以及 `DROP`、`DELETE`、`UPDATE` 等危险 SQL 关键词。
+
+`check_dpo_data.py` 会检查 `prompt`、`chosen`、`rejected` 是否完整，`chosen` 和 `rejected` 是否完全相同，偏好对长度比例是否异常，以及任务类型、数据库和重复样本分布。
+
+项目级快速检查：
+
+```bash
+python checks/smoke_test.py
+```
+
+`smoke_test.py` 会检查数据文件、JSONL 字段、SQLite 数据库、核心 Python 入口和模型输出目录状态。若依赖未安装，可跳过入口导入：
+
+```bash
+python checks/smoke_test.py --skip-imports
+```
+
 ## 训练
 
 LoRA SFT：
 
 ```bash
 python train_lora.py
+```
+
+常用参数示例：
+
+```bash
+python train_lora.py --epochs 2 --learning-rate 3e-5 --lora-r 16 --max-length 4096
 ```
 
 训练完成后输出：
@@ -140,7 +176,15 @@ DPO：
 python train_dpo.py
 ```
 
-`train_dpo.py` 默认加载 `./output_lora/final_model`，再进行 DPO 偏好优化。训练完成后输出：
+`train_dpo.py` 默认加载 `./output_lora/final_model`，再进行 DPO 偏好优化。
+
+常用参数示例：
+
+```bash
+python train_dpo.py --epochs 1 --learning-rate 5e-6 --beta 0.05 --max-prompt-length 2048 --max-length 3072
+```
+
+训练完成后输出：
 
 ```text
 output_dpo/final_model/
@@ -156,8 +200,19 @@ logs/<timestamp>_<run_name>/
   train.log
   metrics.jsonl
   loss_curve.png
+  summary.json
   predictions.txt
+  preference_samples.jsonl
 ```
+
+其中：
+
+- `config.json` 记录本次训练配置和命令行参数
+- `metrics.jsonl` 记录 step 级别训练 / 验证指标
+- `loss_curve.png` 绘制 train loss / eval loss 曲线
+- `summary.json` 记录最终模型路径、数据行数、global step、最新 / 最佳 loss、最终 train / eval metrics
+- `predictions.txt` 记录 LoRA SFT 训练后的样例预测
+- `preference_samples.jsonl` 记录 DPO eval 集偏好样例快照
 
 Web 调用日志固定写入：
 
@@ -206,7 +261,8 @@ http://127.0.0.1:5000/dashboard
 - 自定义 system prompt、temperature、top_p、最大生成长度
 - 首次加载/生成时显示进度与等待秒数
 - 对 NL2SQL 问题自动补充本地 SQLite schema，减少误拒答
-- 释放已加载模型缓存
+- 默认最多缓存 1 个已加载模型，切换模型时自动释放旧模型显存
+- 手动释放已加载模型缓存
 
 模型路径：
 
@@ -215,6 +271,24 @@ http://127.0.0.1:5000/dashboard
 SFT：output_lora/final_model/
 DPO：output_dpo/final_model/
 ```
+
+模型缓存数量可通过环境变量调整：
+
+Windows CMD：
+
+```bat
+set MAX_LOADED_MODELS=2
+python app.py
+```
+
+PowerShell：
+
+```powershell
+$env:MAX_LOADED_MODELS=2
+python app.py
+```
+
+单卡显存较紧时建议保持默认值 `1`，方便在原模型、SFT 和 DPO 模型之间切换对比时自动释放旧模型。
 
 ## 开源说明
 
@@ -239,7 +313,10 @@ output_dpo/
 ## 常用检查
 
 ```bash
-python -m py_compile prepare_data.py data_prep/generate_finance_sft_data.py data_prep/generate_finance_dpo_data.py data_prep/init_finance_sqlite.py train.py train_lora.py train_dpo.py app.py
+python -m py_compile prepare_data.py data_prep/generate_finance_sft_data.py data_prep/generate_finance_dpo_data.py data_prep/init_finance_sqlite.py train.py train_lora.py train_dpo.py app.py checks/check_sft_data.py checks/check_dpo_data.py checks/smoke_test.py
+python checks/check_sft_data.py
+python checks/check_dpo_data.py
+python checks/smoke_test.py
 ```
 
 ## 注意事项
